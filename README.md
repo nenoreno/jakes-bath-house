@@ -78,7 +78,7 @@ A modern full-stack mobile application for pet grooming and self-service wash bo
 ## 📱 Demo Account
 
 Try the app with the demo account:
-- **Email:** `sarah@example.com`
+- **Email:** `ant@cheese.com`
 - **Password:** `password123`
 
 Or create your own account using the registration form!
