@@ -342,21 +342,16 @@ const RegisterScreen = ({ onSwitchToLogin }) => {
   );
 };
 
-// Main App Component (Updated with Auth)
+// Main App Component
 function App() {
   const [currentView, setCurrentView] = useState('home');
-  const [authView, setAuthView] = useState('login'); // 'login' or 'register'
+  const [authView, setAuthView] = useState('login');
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const { user, logout } = useAuth();
 
   const [notifications] = useState([
     { id: 1, message: "Your grooming appointment is ready for pickup!", time: "10 min ago" }
-  ]);
-
-  const [appointments] = useState([
-    { id: 1, petName: "Buddy", service: "Professional Grooming", date: "Today", time: "2:00 PM", status: "in-progress" },
-    { id: 2, petName: "Luna", service: "DIY Wash", date: "Tomorrow", time: "10:00 AM", status: "confirmed" }
   ]);
 
   useEffect(() => {
@@ -384,7 +379,7 @@ function App() {
     return <LoginScreen onSwitchToRegister={() => setAuthView('register')} />;
   }
 
-  // Home Screen (now with real user data)
+  // Home Screen
   const HomeScreen = () => (
     <div className="pb-20">
       {/* Header */}
@@ -450,7 +445,7 @@ function App() {
         </div>
       </div>
 
-      {/* Rest of the home screen content... */}
+      {/* Notifications */}
       {notifications.length > 0 && (
         <div className="px-4 mb-6">
           <h3 className="text-lg font-semibold mb-3 text-gray-800">Notifications</h3>
@@ -470,69 +465,879 @@ function App() {
     </div>
   );
 
-  // Book Screen
-  const BookScreen = () => (
-    <div className="pb-20">
-      <div className="p-4">
-        <h2 className="text-2xl font-bold mb-6 text-gray-800">Book Service</h2>
+  // Book Screen with 4-step booking system
+  const BookScreen = () => {
+    const [step, setStep] = useState(1);
+    const [selectedService, setSelectedService] = useState(null);
+    const [selectedPet, setSelectedPet] = useState(null);
+    const [selectedDate, setSelectedDate] = useState('');
+    const [selectedTime, setSelectedTime] = useState('');
+    const [notes, setNotes] = useState('');
+    const [pets, setPets] = useState([]);
+    const [submitting, setSubmitting] = useState(false);
+
+    useEffect(() => {
+      fetchUserPets();
+    }, []);
+
+    const fetchUserPets = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/users/${user.id}/pets`);
+        setPets(response.data.pets || []);
+      } catch (error) {
+        console.error('Failed to fetch pets:', error);
+      }
+    };
+
+    const getAvailableTimeSlots = () => {
+      if (!selectedService) return [];
+      
+      if (selectedService.type === 'groom') {
+        return [
+          '9:00 AM', '10:00 AM', '11:00 AM', 
+          '12:00 PM', '1:00 PM', '2:00 PM', 
+          '3:00 PM', '4:00 PM', '5:00 PM'
+        ];
+      } else {
+        return [
+          '8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', 
+          '12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM', 
+          '4:00 PM', '5:00 PM', '6:00 PM'
+        ];
+      }
+    };
+
+    const handleBookingSubmit = async () => {
+      setSubmitting(true);
+      
+      try {
+        const bookingData = {
+          user_id: user.id,
+          pet_id: selectedPet.id,
+          service_id: selectedService.id,
+          appointment_date: selectedDate,
+          appointment_time: selectedTime,
+          notes: notes
+        };
+
+        await axios.post(`${API_BASE_URL}/appointments`, bookingData);
         
-        <div className="space-y-4">
-          {loading ? (
+        alert(`🎉 Booking confirmed for ${selectedPet.name}!\n\n${selectedService.name}\n${new Date(selectedDate).toLocaleDateString()} at ${selectedTime}`);
+        
+        resetBookingForm();
+        setCurrentView('appointments');
+        
+      } catch (error) {
+        console.error('Booking failed:', error);
+        alert('Booking failed. Please try again.');
+      } finally {
+        setSubmitting(false);
+      }
+    };
+
+    const resetBookingForm = () => {
+      setStep(1);
+      setSelectedService(null);
+      setSelectedPet(null);
+      setSelectedDate('');
+      setSelectedTime('');
+      setNotes('');
+    };
+
+    // Step 1: Select Service
+    if (step === 1) {
+      return (
+        <div className="pb-20 p-4">
+          <h2 className="text-2xl font-bold text-gray-800 mb-6">Choose Your Service</h2>
+          
+          <div className="space-y-4">
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full mx-auto"></div>
+              </div>
+            ) : (
+              services.map(service => (
+                <div 
+                  key={service.id} 
+                  onClick={() => {
+                    setSelectedService(service);
+                    setStep(2);
+                  }}
+                  className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:shadow-lg hover:border-orange-200 transition-all cursor-pointer"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center">
+                      {service.type === 'groom' ? (
+                        <div className="bg-amber-100 p-3 rounded-full mr-4">
+                          <Scissors className="w-6 h-6 text-amber-600" />
+                        </div>
+                      ) : (
+                        <div className="bg-teal-100 p-3 rounded-full mr-4">
+                          <Droplets className="w-6 h-6 text-teal-600" />
+                        </div>
+                      )}
+                      <div>
+                        <h3 className="font-semibold text-gray-800">{service.name}</h3>
+                        <p className="text-gray-600 text-sm">
+                          {service.type === 'groom' ? 'Professional grooming by appointment' : 'Self-service wash station'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-gray-800">${service.price}</p>
+                      <p className="text-sm text-gray-500">{service.duration_minutes} min</p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Step 2: Select Pet
+    if (step === 2) {
+      return (
+        <div className="pb-20 p-4">
+          <div className="flex items-center mb-6">
+            <button
+              onClick={() => setStep(1)}
+              className="mr-4 p-2 hover:bg-gray-100 rounded-full"
+            >
+              <ArrowLeft className="w-5 h-5 text-gray-600" />
+            </button>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800">Choose Your Pet</h2>
+              <p className="text-gray-600">Who's getting pampered today?</p>
+            </div>
+          </div>
+
+          {pets.length === 0 ? (
             <div className="text-center py-8">
-              <div className="animate-spin w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full mx-auto"></div>
+              <div className="bg-gray-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl">🐕</span>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">No pets found</h3>
+              <p className="text-gray-500 mb-4">You need to add a pet before booking</p>
+              <button
+                onClick={() => setCurrentView('pets')}
+                className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-6 py-3 rounded-lg font-semibold"
+              >
+                Add Your Pet First
+              </button>
             </div>
           ) : (
-            services.map(service => (
-              <div key={service.id} className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-                <div className="flex items-center justify-between mb-3">
+            <div className="space-y-4">
+              {pets.map(pet => (
+                <div 
+                  key={pet.id}
+                  onClick={() => {
+                    setSelectedPet(pet);
+                    setStep(3);
+                  }}
+                  className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:shadow-lg hover:border-orange-200 transition-all cursor-pointer"
+                >
                   <div className="flex items-center">
-                    {service.type === 'groom' ? (
-                      <div className="bg-amber-100 p-3 rounded-full mr-4">
-                        <Scissors className="w-6 h-6 text-amber-600" />
+                    <div className="bg-orange-100 p-3 rounded-full mr-4">
+                      <span className="text-2xl">
+                        {pet.size === 'large' ? '🐕' : pet.size === 'small' ? '🐶' : '🐕‍🦺'}
+                      </span>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-xl font-semibold text-gray-800">{pet.name}</h3>
+                      <p className="text-gray-600">{pet.breed || 'Mixed breed'}</p>
+                    </div>
+                    <span className="text-orange-500 text-xl">→</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Step 3: Select Date and Time
+    if (step === 3) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const minDate = tomorrow.toISOString().split('T')[0];
+
+      return (
+        <div className="pb-20 p-4">
+          <div className="flex items-center mb-6">
+            <button
+              onClick={() => setStep(2)}
+              className="mr-4 p-2 hover:bg-gray-100 rounded-full"
+            >
+              <ArrowLeft className="w-5 h-5 text-gray-600" />
+            </button>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800">Pick Date & Time</h2>
+              <p className="text-gray-600">When should we expect {selectedPet?.name}?</p>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Select Date</label>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                min={minDate}
+                required
+              />
+            </div>
+
+            {selectedDate && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Available Times</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {getAvailableTimeSlots().map(time => (
+                    <button
+                      key={time}
+                      onClick={() => setSelectedTime(time)}
+                      className={`p-3 text-sm rounded-lg border transition-all ${
+                        selectedTime === time 
+                          ? 'bg-orange-500 text-white border-orange-500 shadow-md' 
+                          : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      {time}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedTime && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Special Requests (Optional)</label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  placeholder="Any special instructions..."
+                  rows="3"
+                />
+              </div>
+            )}
+
+            {selectedTime && (
+              <button
+                onClick={() => setStep(4)}
+                className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-lg font-semibold text-lg"
+              >
+                Review Booking
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Step 4: Confirm Booking
+    if (step === 4) {
+      return (
+        <div className="pb-20 p-4">
+          <div className="flex items-center mb-6">
+            <button
+              onClick={() => setStep(3)}
+              className="mr-4 p-2 hover:bg-gray-100 rounded-full"
+            >
+              <ArrowLeft className="w-5 h-5 text-gray-600" />
+            </button>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800">Confirm Your Booking</h2>
+              <p className="text-gray-600">Review the details below</p>
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl p-6 mb-6 shadow-lg">
+            <div className="text-center mb-4">
+              <h3 className="text-2xl font-bold">🎉 Almost Ready!</h3>
+              <p className="text-orange-100">One click away from pampering {selectedPet?.name}</p>
+            </div>
+            
+            <div className="bg-white bg-opacity-20 rounded-lg p-4 space-y-3">
+              <div className="flex justify-between">
+                <span className="text-orange-100">Service:</span>
+                <span className="font-semibold">{selectedService?.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-orange-100">Pet:</span>
+                <span className="font-semibold">{selectedPet?.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-orange-100">Date:</span>
+                <span className="font-semibold">{new Date(selectedDate).toLocaleDateString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-orange-100">Time:</span>
+                <span className="font-semibold">{selectedTime}</span>
+              </div>
+              <div className="flex justify-between text-lg border-t border-white border-opacity-30 pt-3">
+                <span className="text-orange-100">Total:</span>
+                <span className="font-bold text-2xl">${selectedService?.price}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <button
+              onClick={handleBookingSubmit}
+              disabled={submitting}
+              className="w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white py-4 rounded-lg font-bold text-lg hover:from-green-600 hover:to-emerald-600 transition-all shadow-lg disabled:opacity-50"
+            >
+              {submitting ? 'Creating Booking...' : 'CONFIRM BOOKING 🎉'}
+            </button>
+            
+            <button
+              onClick={resetBookingForm}
+              className="w-full border border-gray-300 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
+            >
+              Start Over
+            </button>
+          </div>
+        </div>
+      );
+    }
+  };
+
+  // Real Appointments Screen
+  const AppointmentsScreen = () => {
+    const [appointments, setAppointments] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedFilter, setSelectedFilter] = useState('all');
+
+    useEffect(() => {
+      fetchRealAppointments();
+    }, []);
+
+    const fetchRealAppointments = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/users/${user.id}/appointments`);
+        setAppointments(response.data.appointments || []);
+      } catch (error) {
+        console.error('Failed to fetch appointments:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const updateAppointmentStatus = async (appointmentId, newStatus) => {
+      try {
+        await axios.put(`${API_BASE_URL}/appointments/${appointmentId}/status`, {
+          status: newStatus
+        });
+        
+        await fetchRealAppointments();
+        
+        const statusMessages = {
+          'in-progress': 'Appointment marked as in progress!',
+          'completed': 'Appointment completed! 🎉',
+          'cancelled': 'Appointment cancelled.'
+        };
+        alert(statusMessages[newStatus] || 'Status updated!');
+        
+      } catch (error) {
+        console.error('Failed to update appointment:', error);
+        alert('Failed to update appointment status.');
+      }
+    };
+
+    const getStatusColor = (status) => {
+      switch (status) {
+        case 'confirmed': return 'bg-blue-100 text-blue-800';
+        case 'in-progress': return 'bg-yellow-100 text-yellow-800';
+        case 'completed': return 'bg-green-100 text-green-800';
+        case 'cancelled': return 'bg-red-100 text-red-800';
+        default: return 'bg-gray-100 text-gray-800';
+      }
+    };
+
+    const getStatusIcon = (status) => {
+      switch (status) {
+        case 'confirmed': return '📋';
+        case 'in-progress': return '🔄';
+        case 'completed': return '✅';
+        case 'cancelled': return '❌';
+        default: return '📋';
+      }
+    };
+
+    const getServiceIcon = (serviceType) => {
+      return serviceType === 'groom' ? 
+        <Scissors className="w-5 h-5 text-amber-500" /> : 
+        <Droplets className="w-5 h-5 text-teal-500" />;
+    };
+
+    const filteredAppointments = appointments.filter(apt => {
+      if (selectedFilter === 'all') return true;
+      if (selectedFilter === 'upcoming') return apt.status === 'confirmed' || apt.status === 'in-progress';
+      if (selectedFilter === 'completed') return apt.status === 'completed';
+      return true;
+    });
+
+    const formatDate = (dateString) => {
+      const date = new Date(dateString);
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      if (date.toDateString() === today.toDateString()) return 'Today';
+      if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+      return date.toLocaleDateString('en-US', { 
+        weekday: 'short', 
+        month: 'short', 
+        day: 'numeric' 
+      });
+    };
+
+    return (
+      <div className="pb-20">
+        <div className="p-4">
+          {/* Header */}
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-800">My Appointments</h2>
+            <button
+              onClick={() => setCurrentView('book')}
+              className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 py-2 rounded-full text-sm font-medium"
+            >
+              + Book New
+            </button>
+          </div>
+
+          {/* Filter Tabs */}
+          <div className="flex bg-gray-100 rounded-lg p-1 mb-6">
+            {[
+              { key: 'all', label: 'All', count: appointments.length },
+              { key: 'upcoming', label: 'Upcoming', count: appointments.filter(a => a.status === 'confirmed' || a.status === 'in-progress').length },
+              { key: 'completed', label: 'Completed', count: appointments.filter(a => a.status === 'completed').length }
+            ].map(({ key, label, count }) => (
+              <button
+                key={key}
+                onClick={() => setSelectedFilter(key)}
+                className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                  selectedFilter === key 
+                    ? 'bg-white text-orange-600 shadow-sm' 
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                {label} ({count})
+              </button>
+            ))}
+          </div>
+
+          {/* Appointments List */}
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading your appointments...</p>
+            </div>
+          ) : filteredAppointments.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="bg-gray-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Calendar className="w-8 h-8 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                {selectedFilter === 'all' ? 'No appointments yet' : `No ${selectedFilter} appointments`}
+              </h3>
+              <p className="text-gray-500 mb-6">
+                {selectedFilter === 'all' 
+                  ? 'Book your first appointment to get started!' 
+                  : `No ${selectedFilter} appointments found.`
+                }
+              </p>
+              {selectedFilter === 'all' && (
+                <button
+                  onClick={() => setCurrentView('book')}
+                  className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-6 py-3 rounded-lg font-semibold"
+                >
+                  Book First Appointment
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredAppointments.map(apt => (
+                <div key={apt.id} className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+                  {/* Appointment Header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center">
+                      <div className="bg-gray-100 p-3 rounded-full mr-4">
+                        {getServiceIcon(apt.service_type)}
                       </div>
-                    ) : (
-                      <div className="bg-teal-100 p-3 rounded-full mr-4">
-                        <Droplets className="w-6 h-6 text-teal-600" />
+                      <div>
+                        <h3 className="font-semibold text-gray-800 text-lg">{apt.pet_name}</h3>
+                        <p className="text-gray-600">{apt.service_name}</p>
                       </div>
-                    )}
-                    <div>
-                      <h3 className="font-semibold text-gray-800">{service.name}</h3>
-                      <p className="text-gray-600 text-sm">
-                        {service.type === 'groom' ? 'Professional grooming by appointment' : 'Self-service wash station'}
+                    </div>
+                    
+                    <div className="text-right">
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(apt.status)}`}>
+                        {getStatusIcon(apt.status)} {apt.status.charAt(0).toUpperCase() + apt.status.slice(1)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Date & Time */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center text-gray-600">
+                      <Calendar className="w-4 h-4 mr-2" />
+                      <span className="font-medium">{formatDate(apt.appointment_date)}</span>
+                      <Clock className="w-4 h-4 ml-4 mr-2" />
+                      <span>{apt.appointment_time}</span>
+                    </div>
+                    
+                    <div className="text-right">
+                      <p className="text-sm text-gray-500">
+                        Booked {new Date(apt.created_at).toLocaleDateString()}
                       </p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-bold text-gray-800">${service.price}</p>
-                  </div>
+
+                  {/* Special Notes */}
+                  {apt.notes && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                      <h4 className="text-sm font-medium text-blue-800 mb-1">📝 Special Notes:</h4>
+                      <p className="text-blue-700 text-sm">{apt.notes}</p>
+                    </div>
+                  )}
+
+                  {/* Status-specific content */}
+                  {apt.status === 'confirmed' && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                      <p className="text-blue-800 text-sm font-medium">
+                        🗓️ Your appointment is confirmed! We'll see {apt.pet_name} soon.
+                      </p>
+                    </div>
+                  )}
+
+                  {apt.status === 'in-progress' && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                      <p className="text-yellow-800 text-sm font-medium">
+                        🔄 {apt.pet_name} is being pampered right now! We'll notify you when complete.
+                      </p>
+                    </div>
+                  )}
+
+                  {apt.status === 'completed' && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                      <p className="text-green-800 text-sm font-medium">
+                        ✅ {apt.pet_name} is all clean and ready for pickup! Thanks for choosing Jake's Bath House.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Action Buttons (for demo - in real app, only Jake's team would see these) */}
+                  {apt.status !== 'completed' && apt.status !== 'cancelled' && (
+                    <div className="flex space-x-2 pt-3 border-t border-gray-100">
+                      <span className="text-xs text-gray-500 mr-2">Staff Actions:</span>
+                      {apt.status === 'confirmed' && (
+                        <button
+                          onClick={() => updateAppointmentStatus(apt.id, 'in-progress')}
+                          className="px-3 py-1 text-xs bg-yellow-500 text-white rounded hover:bg-yellow-600 transition-colors"
+                        >
+                          Start Service
+                        </button>
+                      )}
+                      {apt.status === 'in-progress' && (
+                        <button
+                          onClick={() => updateAppointmentStatus(apt.id, 'completed')}
+                          className="px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                        >
+                          Mark Complete
+                        </button>
+                      )}
+                      <button
+                        onClick={() => updateAppointmentStatus(apt.id, 'cancelled')}
+                        className="px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
-                
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center text-gray-500 text-sm">
-                    <Clock className="w-4 h-4 mr-1" />
-                    <span>{service.duration_minutes} min</span>
-                  </div>
-                  <button className={`px-6 py-2 rounded-full font-semibold text-white ${
-                    service.type === 'groom' 
-                      ? 'bg-gradient-to-r from-amber-500 to-orange-500'
-                      : 'bg-gradient-to-r from-teal-500 to-cyan-500'
-                  }`}>
-                    Select
-                  </button>
-                </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
-  // Profile Screen (Updated with real user data and logout)
+  // Pet Management Screen
+  const PetManagementScreen = () => {
+    const [pets, setPets] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [showAddForm, setShowAddForm] = useState(false);
+
+    useEffect(() => {
+      fetchPets();
+    }, []);
+
+    const fetchPets = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/users/${user.id}/pets`);
+        setPets(response.data.pets || []);
+      } catch (error) {
+        console.error('Failed to fetch pets:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const handleAddPet = async (petData) => {
+      try {
+        await axios.post(`${API_BASE_URL}/pets`, {
+          ...petData,
+          user_id: user.id
+        });
+        
+        await fetchPets();
+        setShowAddForm(false);
+        
+        alert(`🎉 ${petData.name} has been added to your pets!`);
+      } catch (error) {
+        console.error('Failed to add pet:', error);
+        alert('Failed to add pet. Please try again.');
+      }
+    };
+
+    const handleDeletePet = async (petId, petName) => {
+      if (window.confirm(`Are you sure you want to remove ${petName} from your pets?`)) {
+        try {
+          await axios.delete(`${API_BASE_URL}/pets/${petId}`);
+          await fetchPets();
+          alert(`${petName} has been removed from your pets.`);
+        } catch (error) {
+          console.error('Failed to delete pet:', error);
+          alert('Failed to remove pet. Please try again.');
+        }
+      }
+    };
+
+    if (showAddForm) {
+      return <AddPetForm onSubmit={handleAddPet} onCancel={() => setShowAddForm(false)} />;
+    }
+
+    return (
+      <div className="pb-20 p-4">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-800">My Pets</h2>
+          <button 
+            onClick={() => setShowAddForm(true)}
+            className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 py-2 rounded-full flex items-center hover:from-orange-600 hover:to-amber-600 transition-all"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Pet
+          </button>
+        </div>
+        
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="animate-spin w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading your furry friends...</p>
+          </div>
+        ) : pets.length === 0 ? (
+          <div className="text-center py-8">
+            <div className="bg-gray-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-3xl">🐕</span>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">No pets yet</h3>
+            <p className="text-gray-500 mb-6">Add your first furry family member to start booking appointments</p>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-6 py-3 rounded-lg font-semibold hover:from-orange-600 hover:to-amber-600 transition-all"
+            >
+              Add Your First Pet
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {pets.map(pet => (
+              <div key={pet.id} className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center flex-1">
+                    <div className="bg-orange-100 p-3 rounded-full mr-4">
+                      <span className="text-2xl">
+                        {pet.size === 'large' ? '🐕' : pet.size === 'small' ? '🐶' : '🐕‍🦺'}
+                      </span>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-xl font-semibold text-gray-800">{pet.name}</h3>
+                      <p className="text-gray-600">{pet.breed || 'Mixed breed'}</p>
+                      <div className="flex items-center text-sm text-gray-500 mt-1">
+                        <span className="capitalize bg-gray-100 px-2 py-1 rounded-full text-xs">
+                          {pet.size || 'Size not specified'}
+                        </span>
+                      </div>
+                      {pet.notes && (
+                        <p className="text-sm text-gray-500 mt-2 bg-blue-50 p-2 rounded italic">
+                          "{pet.notes}"
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => handleDeletePet(pet.id, pet.name)}
+                    className="ml-4 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title={`Remove ${pet.name}`}
+                  >
+                    <span className="text-lg">×</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+            
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="w-full border-2 border-dashed border-gray-300 rounded-xl p-6 text-gray-500 hover:border-orange-400 hover:text-orange-600 transition-colors"
+            >
+              <Plus className="w-6 h-6 mx-auto mb-2" />
+              <span className="font-medium">Add Another Pet</span>
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Add Pet Form Component
+  const AddPetForm = ({ onSubmit, onCancel }) => {
+    const [formData, setFormData] = useState({
+      name: '',
+      breed: '',
+      size: '',
+      notes: ''
+    });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleChange = (e) => {
+      setFormData({ ...formData, [e.target.name]: e.target.value });
+    };
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      if (!formData.name.trim()) {
+        alert('Pet name is required!');
+        return;
+      }
+      
+      setIsSubmitting(true);
+      await onSubmit(formData);
+      setIsSubmitting(false);
+    };
+
+    return (
+      <div className="pb-20 p-4">
+        <div className="flex items-center mb-6">
+          <button
+            onClick={onCancel}
+            className="mr-4 p-2 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5 text-gray-600" />
+          </button>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">Add New Pet</h2>
+            <p className="text-gray-600">Tell us about your furry friend</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Pet Name *
+            </label>
+            <input
+              type="text"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-lg"
+              placeholder="e.g., Buddy, Luna, Max, Bella"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Breed
+            </label>
+            <input
+              type="text"
+              name="breed"
+              value={formData.breed}
+              onChange={handleChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              placeholder="e.g., Golden Retriever, Labrador, Mixed breed"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Size
+            </label>
+            <select
+              name="size"
+              value={formData.size}
+              onChange={handleChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+            >
+              <option value="">Select size</option>
+              <option value="small">🐶 Small (under 25 lbs)</option>
+              <option value="medium">🐕‍🦺 Medium (25-60 lbs)</option>
+              <option value="large">🐕 Large (over 60 lbs)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Special Notes
+            </label>
+            <textarea
+              name="notes"
+              value={formData.notes}
+              onChange={handleChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              placeholder="Any special care instructions, behavioral notes, allergies, etc."
+              rows="4"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              This helps our groomers provide the best care for your pet
+            </p>
+          </div>
+
+          <div className="flex space-x-3 pt-6">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex-1 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-lg font-semibold hover:from-orange-600 hover:to-amber-600 transition-all disabled:opacity-50"
+            >
+              {isSubmitting ? 'Adding Pet...' : '🐕 Add Pet'}
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  };
+
+  // Profile Screen
   const ProfileScreen = () => (
     <div className="pb-20">
       <div className="p-4">
-        {/* Profile Header */}
         <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-6 text-white mb-6">
           <div className="flex items-center">
             <div className="bg-white bg-opacity-30 w-16 h-16 rounded-full flex items-center justify-center mr-4">
@@ -550,7 +1355,6 @@ function App() {
           </div>
         </div>
 
-        {/* Rewards Card */}
         <div className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl p-6 text-white mb-6">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold">Rewards Progress</h3>
@@ -568,7 +1372,6 @@ function App() {
           </div>
         </div>
 
-        {/* Menu Items */}
         <div className="space-y-3">
           <button 
             onClick={logout}
@@ -579,7 +1382,6 @@ function App() {
           </button>
         </div>
 
-        {/* Location Info */}
         <div className="mt-6 bg-white rounded-xl p-4 shadow-sm">
           <div className="flex items-center mb-3">
             <MapPin className="w-5 h-5 text-orange-600 mr-2" />
@@ -593,21 +1395,12 @@ function App() {
     </div>
   );
 
-  // Other screens remain the same...
-  const AppointmentsScreen = () => (
-    <div className="pb-20">
-      <div className="p-4">
-        <h2 className="text-2xl font-bold mb-6 text-gray-800">My Appointments</h2>
-        {/* Appointments content... */}
-      </div>
-    </div>
-  );
-
   const renderScreen = () => {
     switch(currentView) {
       case 'home': return <HomeScreen />;
       case 'book': return <BookScreen />;
       case 'appointments': return <AppointmentsScreen />;
+      case 'pets': return <PetManagementScreen />;
       case 'profile': return <ProfileScreen />;
       default: return <HomeScreen />;
     }
@@ -615,18 +1408,17 @@ function App() {
 
   return (
     <div className="max-w-md mx-auto bg-gray-50 min-h-screen relative">
-      {/* Content */}
       <div className="pt-4">
         {renderScreen()}
       </div>
 
-      {/* Bottom Navigation */}
       <div className="fixed bottom-0 left-1/2 transform -translate-x-1/2 w-full max-w-md bg-white border-t border-gray-200 px-4 py-2">
         <div className="flex justify-around items-center">
           {[
             { key: 'home', icon: Home, label: 'Home' },
             { key: 'book', icon: Plus, label: 'Book' },
             { key: 'appointments', icon: Clock, label: 'Visits' },
+            { key: 'pets', icon: User, label: 'Pets' },
             { key: 'profile', icon: User, label: 'Profile' },
           ].map(({ key, icon: Icon, label }) => (
             <button

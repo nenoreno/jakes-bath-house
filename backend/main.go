@@ -250,6 +250,7 @@ func main() {
             `, req.UserID, req.Name, req.Breed, req.Size, req.Notes).Scan(&petID)
 
             if err != nil {
+                log.Printf("Failed to create pet: %v", err)
                 c.JSON(500, gin.H{"error": "Failed to create pet"})
                 return
             }
@@ -271,9 +272,10 @@ func main() {
             
             rows, err := db.Query(`
                 SELECT id, user_id, name, breed, size, notes, created_at
-                FROM pets WHERE user_id = $1 ORDER BY created_at DESC
+                FROM pets WHERE user_id = $1 ORDER BY name
             `, userID)
             if err != nil {
+                log.Printf("Failed to fetch pets: %v", err)
                 c.JSON(500, gin.H{"error": "Failed to fetch pets"})
                 return
             }
@@ -285,12 +287,56 @@ func main() {
                 var createdAt time.Time
                 err := rows.Scan(&pet.ID, &pet.UserID, &pet.Name, &pet.Breed, &pet.Size, &pet.Notes, &createdAt)
                 if err != nil {
+                    log.Printf("Error scanning pet: %v", err)
                     continue
                 }
                 pets = append(pets, pet)
             }
 
             c.JSON(200, gin.H{"pets": pets})
+        })
+
+        api.PUT("/pets/:id", func(c *gin.Context) {
+            petID := c.Param("id")
+            
+            var req struct {
+                Name  string `json:"name" binding:"required"`
+                Breed string `json:"breed"`
+                Size  string `json:"size"`
+                Notes string `json:"notes"`
+            }
+            
+            if err := c.ShouldBindJSON(&req); err != nil {
+                c.JSON(400, gin.H{"error": err.Error()})
+                return
+            }
+
+            _, err := db.Exec(`
+                UPDATE pets 
+                SET name = $1, breed = $2, size = $3, notes = $4
+                WHERE id = $5
+            `, req.Name, req.Breed, req.Size, req.Notes, petID)
+
+            if err != nil {
+                log.Printf("Failed to update pet: %v", err)
+                c.JSON(500, gin.H{"error": "Failed to update pet"})
+                return
+            }
+
+            c.JSON(200, gin.H{"message": "Pet updated successfully"})
+        })
+
+        api.DELETE("/pets/:id", func(c *gin.Context) {
+            petID := c.Param("id")
+            
+            _, err := db.Exec("DELETE FROM pets WHERE id = $1", petID)
+            if err != nil {
+                log.Printf("Failed to delete pet: %v", err)
+                c.JSON(500, gin.H{"error": "Failed to delete pet"})
+                return
+            }
+
+            c.JSON(200, gin.H{"message": "Pet deleted successfully"})
         })
 
         // Service routes
