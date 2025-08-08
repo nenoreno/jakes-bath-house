@@ -1,4 +1,3 @@
-
 # 🐕 Jake's Bath House
 
 A modern full-stack mobile application for pet grooming and self-service wash booking, built for Jake's Bath House in Royal Palm Beach, Florida.
@@ -10,8 +9,10 @@ A modern full-stack mobile application for pet grooming and self-service wash bo
 - 📅 **Appointment Booking** - Book professional grooming and DIY wash stations
 - 🐾 **Pet Management** - Add and manage multiple pets per account
 - 🏆 **Rewards System** - Earn points and get free washes after every 5 visits
-- 📲 **Real-Time Updates** - Get notifications when grooming is complete
+- 📲 **Real-Time Updates** - Live WebSocket notifications when grooming status changes
 - 💳 **Service Management** - Browse different grooming packages and pricing
+- ⚡ **Enhanced Appointment Management** - Real-time status updates and live broadcasting
+- 🔄 **Live Status Tracking** - Instant updates across all connected devices
 
 ## 🏗️ Tech Stack
 
@@ -21,10 +22,12 @@ A modern full-stack mobile application for pet grooming and self-service wash bo
 - **Vite** for fast development and building
 - **Axios** for API communication
 - **Lucide React** for icons
+- **WebSocket Client** for real-time updates
 
 ### Backend  
 - **Go (Golang)** with Gin framework
 - **PostgreSQL** database
+- **WebSocket Hub** for real-time broadcasting
 - **bcrypt** for password hashing
 - **RESTful API** design
 - **CORS** enabled for cross-origin requests
@@ -56,23 +59,31 @@ A modern full-stack mobile application for pet grooming and self-service wash bo
    docker-compose up -d
    ```
 
-3. **Setup Backend**
+3. **Run Database Migrations** (for enhanced features)
+   ```bash
+   # Connect to PostgreSQL and run the migration scripts
+   docker exec -i jakes-bathhouse-db psql -U postgres -d jakes_bathhouse < migration.sql
+   ```
+
+4. **Setup Backend**
    ```bash
    cd ../backend
    go mod tidy
+   go get github.com/gorilla/websocket
    go run main.go
    ```
 
-4. **Setup Frontend**
+5. **Setup Frontend**
    ```bash
    cd ../frontend
    npm install
    npm run dev
    ```
 
-5. **Open the Application**
+6. **Open the Application**
    - Frontend: http://localhost:3000
-   - Backend API: http://localhost:8080
+   - Backend API: http://localhost:8081
+   - WebSocket: ws://localhost:8081/ws
    - Database: localhost:5432
 
 ## 📱 Demo Account
@@ -101,6 +112,7 @@ jakes-bath-house/
 │   └── .env                # Environment variables
 ├── database/                 # PostgreSQL setup
 │   ├── init.sql            # Database schema
+│   ├── migration.sql       # Enhanced features migration
 │   └── docker-compose.yml  # Database container
 └── README.md
 ```
@@ -111,7 +123,7 @@ Create a `.env` file in the `backend/` directory:
 
 ```env
 DATABASE_URL=postgres://postgres:password123@localhost:5432/jakes_bathhouse?sslmode=disable
-PORT=8080
+PORT=8081
 ```
 
 ## 🌟 Key Features Explained
@@ -122,6 +134,18 @@ PORT=8080
 - Session management with localStorage
 - Protected routes and user context
 
+### Real-Time WebSocket System
+- **Live appointment updates** - Status changes broadcast instantly
+- **Multi-client support** - Updates appear on all connected devices
+- **Automatic reconnection** - Maintains connection stability
+- **Real-time notifications** - Instant alerts for appointment changes
+
+### Enhanced Appointment Management
+- **Status tracking**: `pending` → `confirmed` → `in_progress` → `completed` → `cancelled`
+- **Live status updates** broadcast to all connected clients
+- **Appointment history** with change tracking
+- **Conflict prevention** and validation
+
 ### Mobile App Experience
 - Bottom tab navigation
 - Card-based UI design
@@ -131,7 +155,7 @@ PORT=8080
 ### Business Logic
 - Service booking for DIY washes and professional grooming
 - Rewards tracking (every 5th visit is free)
-- Appointment status management
+- Real-time appointment status management
 - User profile and pet management
 
 ## 📊 Database Schema
@@ -140,8 +164,11 @@ The app uses PostgreSQL with the following main tables:
 - **users** - Customer accounts and authentication
 - **pets** - Pet profiles linked to users
 - **services** - Available grooming services and pricing
-- **appointments** - Booking records and status
+- **appointments** - Booking records and status with real-time updates
 - **rewards** - Points and reward tracking
+- **appointment_history** - Track all appointment changes
+- **notification_preferences** - User notification settings
+- **appointment_status_updates** - Real-time status change log
 
 ## 🚧 Current Status
 
@@ -150,14 +177,18 @@ This is an active project built for Jake's Bath House. Current functionality inc
 ✅ User authentication and registration  
 ✅ Mobile-responsive design  
 ✅ Service browsing and pricing display  
-✅ Basic appointment booking interface  
+✅ Full appointment booking system  
+✅ Real-time WebSocket updates  
+✅ Enhanced appointment status management  
+✅ Live broadcasting of appointment changes  
 ✅ Rewards progress tracking  
 
 🔄 **In Development:**
 - Payment processing integration
-- Real-time appointment status updates
 - Push notifications
 - Admin dashboard for Jake's team
+- Appointment rescheduling and cancellation
+- SMS notifications
 
 ## 🎯 Future Enhancements
 
@@ -168,6 +199,41 @@ This is an active project built for Jake's Bath House. Current functionality inc
 - **Photo Upload** - Before/after grooming photos
 - **Calendar Integration** - Google Calendar sync
 - **Review System** - Customer feedback and ratings
+
+## 🆕 Latest Updates (August 2025)
+
+### WebSocket Real-Time Features
+- ✅ **Real-time appointment updates** - Live status changes across all devices
+- ✅ **WebSocket connection management** - Automatic connection on login
+- ✅ **Enhanced status tracking** - Complete appointment lifecycle management
+- ✅ **Live broadcasting** - Instant notifications for appointment changes
+- ✅ **Database enhancements** - Appointment history and change tracking
+
+### Technical Improvements
+- ✅ **Enhanced backend API** with WebSocket support
+- ✅ **Improved error handling** and logging
+- ✅ **Database migrations** for new features
+- ✅ **Real-time client connectivity** 
+- ✅ **Status validation** and constraint management
+
+## 🔌 API Endpoints
+
+### Authentication
+- `POST /api/v1/register` - User registration
+- `POST /api/v1/login` - User login
+
+### Appointments
+- `GET /api/v1/users/:id/appointments` - Get user appointments
+- `POST /api/v1/appointments` - Create appointment
+- `PUT /api/v1/appointments/:id/status` - Update appointment status (with real-time broadcasting)
+
+### WebSocket
+- `WS /ws?user_id=:id` - Real-time updates connection
+
+### Other
+- `GET /api/v1/services` - Get available services
+- `GET /api/v1/users/:id/pets` - Get user pets
+- `GET /health` - Health check
 
 ## 🏢 About Jake's Bath House
 
