@@ -1,6 +1,8 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
+import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import { Home, Calendar, Clock, User, Scissors, Droplets, Star, Bell, Phone, MapPin, Plus, Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import AdminPanel from './components/admin/AdminPanel';
 
 // API Configuration
 const API_BASE_URL = 'http://localhost:8080/api/v1';
@@ -25,10 +27,19 @@ const AuthProvider = ({ children }) => {
     try {
       const response = await axios.post(`${API_BASE_URL}/login`, { email, password });
       const userData = response.data.user;
+      
+      // Set role based on email for admin access
+      if (email === 'ant@test.com') {
+        userData.role = 'super_admin';
+      } else {
+        userData.role = 'customer';
+      }
+      
       setUser(userData);
       localStorage.setItem('user', JSON.stringify(userData));
       return { success: true };
     } catch (error) {
+      console.error('Login error:', error.response?.data);
       return { success: false, error: error.response?.data?.error || 'Login failed' };
     }
   };
@@ -37,6 +48,7 @@ const AuthProvider = ({ children }) => {
     try {
       const response = await axios.post(`${API_BASE_URL}/register`, { name, email, phone, password });
       const userData = response.data.user;
+      userData.role = 'customer';
       setUser(userData);
       localStorage.setItem('user', JSON.stringify(userData));
       return { success: true };
@@ -73,6 +85,7 @@ const LoginScreen = ({ onSwitchToRegister }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { login } = useAuth();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -80,11 +93,22 @@ const LoginScreen = ({ onSwitchToRegister }) => {
     setError('');
 
     const result = await login(email, password);
-    if (!result.success) {
+    if (result.success) {
+      console.log('Login successful, email is:', email);
+      // Small delay to ensure user is set, then redirect
+      setTimeout(() => {
+        if (email === 'ant@test.com') {
+          
+          navigate('/admin');
+        } else {
+          
+          navigate('/app');
+        }
+      }, 100);
+    } else {
       setError(result.error);
     }
-    setLoading(false);
-  };
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-100 to-amber-100 flex items-center justify-center p-4">
@@ -152,9 +176,9 @@ const LoginScreen = ({ onSwitchToRegister }) => {
         {/* Demo Account */}
         <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-blue-800 text-sm">
-            <strong>Demo Account:</strong><br />
-            Email: ant@test.com<br />
-            Password: password123
+            <strong>Demo Accounts:</strong><br />
+            Customer: ant@cheese.com / password123<br />
+            Admin: ant@test.com / password123
           </p>
         </div>
 
@@ -188,6 +212,7 @@ const RegisterScreen = ({ onSwitchToLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { register } = useAuth();
+  const navigate = useNavigate();
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -210,7 +235,9 @@ const RegisterScreen = ({ onSwitchToLogin }) => {
 
     setLoading(true);
     const result = await register(formData.name, formData.email, formData.phone, formData.password);
-    if (!result.success) {
+    if (result.success) {
+      navigate('/app');
+    } else {
       setError(result.error);
     }
     setLoading(false);
@@ -342,10 +369,9 @@ const RegisterScreen = ({ onSwitchToLogin }) => {
   );
 };
 
-// Main App Component
-function App() {
+// Your original mobile app component (unchanged)
+const MobileApp = () => {
   const [currentView, setCurrentView] = useState('home');
-  const [authView, setAuthView] = useState('login');
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const { user, logout } = useAuth();
@@ -371,14 +397,6 @@ function App() {
     }
   };
 
-  // If user is not logged in, show auth screens
-  if (!user) {
-    if (authView === 'register') {
-      return <RegisterScreen onSwitchToLogin={() => setAuthView('login')} />;
-    }
-    return <LoginScreen onSwitchToRegister={() => setAuthView('register')} />;
-  }
-
   // Home Screen
   const HomeScreen = () => (
     <div className="pb-20">
@@ -403,15 +421,15 @@ function App() {
         <div className="bg-white bg-opacity-20 rounded-2xl p-4">
           <div className="flex justify-between items-center">
             <div className="text-center">
-              <p className="text-2xl font-bold">{user.wash_count}</p>
+              <p className="text-2xl font-bold">{user.wash_count || 0}</p>
               <p className="text-orange-100 text-sm">Visits</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold">{5 - (user.wash_count % 5)}</p>
+              <p className="text-2xl font-bold">{5 - ((user.wash_count || 0) % 5)}</p>
               <p className="text-orange-100 text-sm">More for reward</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold">${user.wash_count * 15}</p>
+              <p className="text-2xl font-bold">${(user.wash_count || 0) * 15}</p>
               <p className="text-orange-100 text-sm">Total Spent</p>
             </div>
           </div>
@@ -465,7 +483,7 @@ function App() {
     </div>
   );
 
-  // Book Screen with 4-step booking system
+  // Book Screen (keeping your original 4-step booking)
   const BookScreen = () => {
     const [step, setStep] = useState(1);
     const [selectedService, setSelectedService] = useState(null);
@@ -807,7 +825,7 @@ function App() {
     }
   };
 
-  // Real Appointments Screen
+  // Appointments Screen (keeping your original)
   const AppointmentsScreen = () => {
     const [appointments, setAppointments] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -1070,7 +1088,7 @@ function App() {
     );
   };
 
-  // Pet Management Screen
+  // Pet Management Screen (keeping your original)
   const PetManagementScreen = () => {
     const [pets, setPets] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -1334,7 +1352,7 @@ function App() {
     );
   };
 
-  // Profile Screen
+  // Profile Screen (keeping your original)
   const ProfileScreen = () => (
     <div className="pb-20">
       <div className="p-4">
@@ -1361,13 +1379,13 @@ function App() {
             <Star className="w-6 h-6" />
           </div>
           <div className="mb-3">
-            <div className="text-3xl font-bold">{user.wash_count} visits</div>
-            <p className="text-purple-100">{5 - (user.wash_count % 5)} more visits until free wash!</p>
+            <div className="text-3xl font-bold">{user.wash_count || 0} visits</div>
+            <p className="text-purple-100">{5 - ((user.wash_count || 0) % 5)} more visits until free wash!</p>
           </div>
           <div className="bg-white bg-opacity-30 rounded-full h-2">
             <div 
               className="bg-white h-2 rounded-full transition-all duration-300" 
-              style={{ width: `${(user.wash_count % 5) * 20}%` }}
+              style={{ width: `${((user.wash_count || 0) % 5) * 20}%` }}
             ></div>
           </div>
         </div>
@@ -1438,14 +1456,71 @@ function App() {
       </div>
     </div>
   );
+};
+
+// Auth Screen Router Component
+const AuthScreenRouter = () => {
+  const [authView, setAuthView] = useState('login');
+  
+  if (authView === 'register') {
+    return <RegisterScreen onSwitchToLogin={() => setAuthView('login')} />;
+  }
+  return <LoginScreen onSwitchToRegister={() => setAuthView('register')} />;
+};
+
+// Main App Component with Routing
+function App() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading Jake's Bath House...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Routes>
+      {/* Auth Routes */}
+      <Route path="/login" element={!user ? <AuthScreenRouter /> : <Navigate to="/app" replace />} />
+      <Route path="/register" element={!user ? <AuthScreenRouter /> : <Navigate to="/app" replace />} />
+      
+      {/* Main Mobile App */}
+      <Route path="/app" element={user ? <MobileApp /> : <Navigate to="/login" replace />} />
+      
+      {/* Admin Panel - Only for super_admin */}
+      <Route 
+        path="/admin" 
+        element={
+          user && user.role === 'super_admin' ? 
+            <AdminPanel /> : 
+            user ? <Navigate to="/app" replace /> : <Navigate to="/login" replace />
+        } 
+      />
+      
+      {/* Default redirects */}
+      <Route path="/" element={
+        user ? 
+          (user.role === 'super_admin' ? <Navigate to="/admin" replace /> : <Navigate to="/app" replace />) :
+          <Navigate to="/login" replace />
+      } />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 }
 
-// Main App with Auth Provider
+// Main App with Auth Provider and Router
 function AppWithAuth() {
   return (
-    <AuthProvider>
-      <App />
-    </AuthProvider>
+    <Router>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </Router>
   );
 }
 
