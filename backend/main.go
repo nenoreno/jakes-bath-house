@@ -2,14 +2,18 @@ package main
 
 import (
     "database/sql"
+    "encoding/json"
     "log"
+    "net/http"  
     "os"
+    "strconv"
     "time"
 
     "github.com/gin-gonic/gin"
     "github.com/joho/godotenv"
     _ "github.com/lib/pq"
     "golang.org/x/crypto/bcrypt"
+    "github.com/gorilla/websocket"
 )
 
 // Models
@@ -58,6 +62,34 @@ type Appointment struct {
     ServiceName string `json:"service_name"`
     ServiceType string `json:"service_type"`
 }
+
+// WebSocket structures
+type WebSocketMessage struct {
+    Type string      `json:"type"`
+    Data interface{} `json:"data"`
+}
+
+type Hub struct {
+    clients    map[*Client]bool
+    broadcast  chan []byte
+    register   chan *Client
+    unregister chan *Client
+}
+
+type Client struct {
+    hub    *Hub
+    conn   *websocket.Conn
+    send   chan []byte
+    userID int
+}
+
+var upgrader = websocket.Upgrader{
+    CheckOrigin: func(r *http.Request) bool {
+        return true
+    },
+}
+
+var hub *Hub
 
 // Request/Response structs
 type RegisterRequest struct {
@@ -113,6 +145,15 @@ func main() {
 
     log.Println("Connected to database successfully!")
 
+    // Initialize WebSocket hub
+    hub = &Hub{
+        broadcast:  make(chan []byte),
+        register:   make(chan *Client),
+        unregister: make(chan *Client),
+        clients:    make(map[*Client]bool),
+    }
+    go hub.run()
+
     // Setup Gin router
     r := gin.Default()
 
@@ -134,6 +175,9 @@ func main() {
     r.GET("/health", func(c *gin.Context) {
         c.JSON(200, gin.H{"status": "ok", "message": "Jake's Bath House API is running!"})
     })
+
+    // WebSocket route
+    r.GET("/ws", handleWebSocket)
 
     // API routes
     api := r.Group("/api/v1")
@@ -388,6 +432,23 @@ func main() {
                 db.Exec("UPDATE users SET wash_count = wash_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1", req.UserID)
             }
 
+            // Get the created appointment for broadcasting
+            var apt Appointment
+            err = db.QueryRow(`
+                SELECT a.id, a.user_id, a.pet_id, a.service_id, a.appointment_date, a.appointment_time,
+                       a.status, a.notes, a.created_at, p.name as pet_name, s.name as service_name, s.type as service_type
+                FROM appointments a
+                JOIN pets p ON a.pet_id = p.id
+                JOIN services s ON a.service_id = s.id
+                WHERE a.id = $1
+            `, appointmentID).Scan(&apt.ID, &apt.UserID, &apt.PetID, &apt.ServiceID,
+                &apt.AppointmentDate, &apt.AppointmentTime, &apt.Status, &apt.Notes,
+                &apt.CreatedAt, &apt.PetName, &apt.ServiceName, &apt.ServiceType)
+
+            if err == nil {
+                broadcastAppointmentUpdate(apt, "created")
+            }
+
             c.JSON(201, gin.H{"message": "Appointment created successfully", "appointment_id": appointmentID})
         })
 
@@ -420,41 +481,154 @@ func main() {
                 }
                 appointments = append(appointments, apt)
             }
-
             c.JSON(200, gin.H{"appointments": appointments})
         })
 
         api.PUT("/appointments/:id/status", func(c *gin.Context) {
             appointmentID := c.Param("id")
+            log.Printf("Updating appointment ID: %s", appointmentID)
             
             var req struct {
                 Status string `json:"status" binding:"required"`
             }
             if err := c.ShouldBindJSON(&req); err != nil {
+                log.Printf("JSON binding error: %v", err)
                 c.JSON(400, gin.H{"error": err.Error()})
                 return
             }
-
+            
+            log.Printf("Requested status: %s", req.Status)
+            
             _, err := db.Exec(`
                 UPDATE appointments 
                 SET status = $1, updated_at = CURRENT_TIMESTAMP 
                 WHERE id = $2
             `, req.Status, appointmentID)
-
+            
             if err != nil {
+                log.Printf("Database error updating appointment status: %v", err)
                 c.JSON(500, gin.H{"error": "Failed to update appointment status"})
                 return
             }
-
+            
+            log.Printf("Appointment %s status updated successfully to %s", appointmentID, req.Status)
             c.JSON(200, gin.H{"message": "Appointment status updated successfully"})
         })
     }
 
     port := os.Getenv("PORT")
     if port == "" {
-        port = "8080"
+        port = "8081"
     }
 
     log.Printf("Server starting on port %s", port)
     r.Run(":" + port)
+}
+
+// WebSocket functions
+func (h *Hub) run() {
+    for {
+        select {
+        case client := <-h.register:
+            h.clients[client] = true
+            log.Printf("Client connected. Total clients: %d", len(h.clients))
+
+        case client := <-h.unregister:
+            if _, ok := h.clients[client]; ok {
+                delete(h.clients, client)
+                close(client.send)
+                log.Printf("Client disconnected. Total clients: %d", len(h.clients))
+            }
+
+        case message := <-h.broadcast:
+            for client := range h.clients {
+                select {
+                case client.send <- message:
+                default:
+                    close(client.send)
+                    delete(h.clients, client)
+                }
+            }
+        }
+    }
+}
+
+func handleWebSocket(c *gin.Context) {
+    conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+    if err != nil {
+        log.Printf("WebSocket upgrade error: %v", err)
+        return
+    }
+
+    userIDStr := c.Query("user_id")
+    userID, _ := strconv.Atoi(userIDStr)
+
+    client := &Client{
+        hub:    hub,
+        conn:   conn,
+        send:   make(chan []byte, 256),
+        userID: userID,
+    }
+
+    client.hub.register <- client
+    go client.writePump()
+    go client.readPump()
+}
+
+func (c *Client) readPump() {
+    defer func() {
+        c.hub.unregister <- c
+        c.conn.Close()
+    }()
+
+    for {
+        _, _, err := c.conn.ReadMessage()
+        if err != nil {
+            break
+        }
+    }
+}
+
+func (c *Client) writePump() {
+    ticker := time.NewTicker(54 * time.Second)
+    defer func() {
+        ticker.Stop()
+        c.conn.Close()
+    }()
+
+    for {
+        select {
+        case message, ok := <-c.send:
+            if !ok {
+                c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+                return
+            }
+            c.conn.WriteMessage(websocket.TextMessage, message)
+
+        case <-ticker.C:
+            if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+                return
+            }
+        }
+    }
+}
+
+// Broadcast appointment updates to connected WebSocket clients
+func broadcastAppointmentUpdate(appointment Appointment, action string) {
+    message := WebSocketMessage{
+        Type: "appointment_update",
+        Data: map[string]interface{}{
+            "action":      action,
+            "appointment": appointment,
+            "timestamp":   time.Now(),
+        },
+    }
+
+    messageBytes, err := json.Marshal(message)
+    if err != nil {
+        log.Printf("Error marshaling WebSocket message: %v", err)
+        return
+    }
+
+    hub.broadcast <- messageBytes
 }

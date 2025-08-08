@@ -5,7 +5,7 @@ import { Home, Calendar, Clock, User, Scissors, Droplets, Star, Bell, Phone, Map
 import AdminPanel from './components/admin/AdminPanel';
 
 // API Configuration
-const API_BASE_URL = 'http://localhost:8080/api/v1';
+const API_BASE_URL = 'http://localhost:8081/api/v1';
 
 // Auth Context
 const AuthContext = createContext();
@@ -13,6 +13,8 @@ const AuthContext = createContext();
 const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [wsConnection, setWsConnection] = useState(null);
+  const [isConnected, setIsConnected] = useState(false); 
 
   useEffect(() => {
     // Check if user is logged in (stored in localStorage)
@@ -37,10 +39,12 @@ const AuthProvider = ({ children }) => {
       
       setUser(userData);
       localStorage.setItem('user', JSON.stringify(userData));
+      connectWebSocket(userData.id);
       return { success: true };
     } catch (error) {
-      console.error('Login error:', error.response?.data);
-      return { success: false, error: error.response?.data?.error || 'Login failed' };
+      console.error('Login error:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Login failed';
+      return { success: false, error: errorMessage };
     }
   };
 
@@ -51,6 +55,7 @@ const AuthProvider = ({ children }) => {
       userData.role = 'customer';
       setUser(userData);
       localStorage.setItem('user', JSON.stringify(userData));
+      connectWebSocket(userData.id);
       return { success: true };
     } catch (error) {
       return { success: false, error: error.response?.data?.error || 'Registration failed' };
@@ -61,14 +66,31 @@ const AuthProvider = ({ children }) => {
     setUser(null);
     localStorage.removeItem('user');
   };
-
+  const connectWebSocket = (userId) => {
+    if (wsConnection) {
+      wsConnection.close();
+    }
+    const ws = new WebSocket(`ws://localhost:8081/ws?user_id=${userId}`);
+    ws.onopen = () => {
+      console.log('WebSocket connected');
+      setIsConnected(true);
+    };
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      console.log('WebSocket message:', message);
+    };
+    ws.onclose = () => {
+      console.log('WebSocket disconnected');
+      setIsConnected(false);
+    };
+    setWsConnection(ws);
+  };
   return (
     <AuthContext.Provider value={{ user, login, register, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );
 };
-
 const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -374,6 +396,8 @@ const MobileApp = () => {
   const [currentView, setCurrentView] = useState('home');
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [wsConnection, setWsConnection] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
   const { user, logout } = useAuth();
 
   const [notifications] = useState([
@@ -855,7 +879,7 @@ const MobileApp = () => {
         await fetchRealAppointments();
         
         const statusMessages = {
-          'in-progress': 'Appointment marked as in progress!',
+          'in_progress': 'Appointment marked as in progress!',
           'completed': 'Appointment completed! 🎉',
           'cancelled': 'Appointment cancelled.'
         };
@@ -870,7 +894,7 @@ const MobileApp = () => {
     const getStatusColor = (status) => {
       switch (status) {
         case 'confirmed': return 'bg-blue-100 text-blue-800';
-        case 'in-progress': return 'bg-yellow-100 text-yellow-800';
+        case 'in_progress': return 'bg-yellow-100 text-yellow-800';
         case 'completed': return 'bg-green-100 text-green-800';
         case 'cancelled': return 'bg-red-100 text-red-800';
         default: return 'bg-gray-100 text-gray-800';
@@ -880,7 +904,7 @@ const MobileApp = () => {
     const getStatusIcon = (status) => {
       switch (status) {
         case 'confirmed': return '📋';
-        case 'in-progress': return '🔄';
+        case 'in_progress': return '🔄';
         case 'completed': return '✅';
         case 'cancelled': return '❌';
         default: return '📋';
@@ -895,7 +919,7 @@ const MobileApp = () => {
 
     const filteredAppointments = appointments.filter(apt => {
       if (selectedFilter === 'all') return true;
-      if (selectedFilter === 'upcoming') return apt.status === 'confirmed' || apt.status === 'in-progress';
+      if (selectedFilter === 'upcoming') return apt.status === 'confirmed' || apt.status === 'in_progress';
       if (selectedFilter === 'completed') return apt.status === 'completed';
       return true;
     });
@@ -933,7 +957,7 @@ const MobileApp = () => {
           <div className="flex bg-gray-100 rounded-lg p-1 mb-6">
             {[
               { key: 'all', label: 'All', count: appointments.length },
-              { key: 'upcoming', label: 'Upcoming', count: appointments.filter(a => a.status === 'confirmed' || a.status === 'in-progress').length },
+              { key: 'upcoming', label: 'Upcoming', count: appointments.filter(a => a.status === 'confirmed' || a.status === 'in_progress').length },
               { key: 'completed', label: 'Completed', count: appointments.filter(a => a.status === 'completed').length }
             ].map(({ key, label, count }) => (
               <button
@@ -1035,7 +1059,7 @@ const MobileApp = () => {
                     </div>
                   )}
 
-                  {apt.status === 'in-progress' && (
+                  {apt.status === 'in_progress' && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
                       <p className="text-yellow-800 text-sm font-medium">
                         🔄 {apt.pet_name} is being pampered right now! We'll notify you when complete.
@@ -1057,13 +1081,13 @@ const MobileApp = () => {
                       <span className="text-xs text-gray-500 mr-2">Staff Actions:</span>
                       {apt.status === 'confirmed' && (
                         <button
-                          onClick={() => updateAppointmentStatus(apt.id, 'in-progress')}
+                          onClick={() => updateAppointmentStatus(apt.id, 'in_progress')}
                           className="px-3 py-1 text-xs bg-yellow-500 text-white rounded hover:bg-yellow-600 transition-colors"
                         >
                           Start Service
                         </button>
                       )}
-                      {apt.status === 'in-progress' && (
+                      {apt.status === 'in_progress' && (
                         <button
                           onClick={() => updateAppointmentStatus(apt.id, 'completed')}
                           className="px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
