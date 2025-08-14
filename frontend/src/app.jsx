@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate } from 'r
 import axios from 'axios';
 import { Home, Calendar, Clock, User, Scissors, Droplets, Star, Bell, Phone, MapPin, Plus, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import AdminPanel from './components/admin/AdminPanel';
+import PaymentStep from './components/payment/PaymentStep';
 
 // API Configuration
 const API_BASE_URL = 'http://localhost:8081/api/v1';
@@ -773,7 +774,7 @@ const MobileApp = () => {
                 onClick={() => setStep(4)}
                 className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-lg font-semibold text-lg"
               >
-                Review Booking
+                Continue to Payment
               </button>
             )}
           </div>
@@ -781,8 +782,28 @@ const MobileApp = () => {
       );
     }
 
-    // Step 4: Confirm Booking
+    // Step 4: Payment
     if (step === 4) {
+      return (
+        <PaymentStep
+          selectedService={selectedService}
+          selectedPet={selectedPet}
+          selectedDate={selectedDate}
+          selectedTime={selectedTime}
+          userId={user.id}
+          onPaymentSuccess={(paymentResult) => {
+            // Payment successful - show success message and redirect
+            alert(`🎉 Payment successful! Booking confirmed for ${selectedPet?.name}!\n\n${selectedService?.name}\n${new Date(selectedDate).toLocaleDateString()} at ${selectedTime}\n\nPayment ID: ${paymentResult.paymentIntentId}`);
+            resetBookingForm();
+            setCurrentView('appointments');
+          }}
+          onBack={() => setStep(3)}
+        />
+      );
+    }
+
+    // Step 5: Confirm Booking (for DIY services that don't require payment)
+    if (step === 5) {
       return (
         <div className="pb-20 p-4">
           <div className="flex items-center mb-6">
