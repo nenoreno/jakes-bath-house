@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import PaymentForm from './PaymentForm';
 import axios from 'axios';
 
+const API_BASE_URL = 'http://localhost:8081/api/v1';
+
 const PaymentStep = ({ 
   selectedService, 
   selectedPet, 
@@ -20,7 +22,7 @@ const PaymentStep = ({
     // Fetch full service details including deposit requirements
     const fetchServiceDetails = async () => {
       try {
-        const response = await axios.get('/api/v1/services');
+        const response = await axios.get(`${API_BASE_URL}/services`);
         const service = response.data.services.find(s => s.id === selectedService);
         setServiceDetails(service);
         

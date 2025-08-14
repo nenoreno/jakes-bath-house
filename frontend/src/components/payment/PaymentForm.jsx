@@ -8,6 +8,8 @@ import {
 } from '@stripe/react-stripe-js';
 import axios from 'axios';
 
+const API_BASE_URL = 'http://localhost:8081/api/v1';
+
 // Initialize Stripe with publishable key
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || 'pk_test_placeholder');
 
@@ -49,7 +51,7 @@ const CheckoutForm = ({
     // Create payment intent when component mounts
     const createPaymentIntent = async () => {
       try {
-        const response = await axios.post('/api/v1/payments/intent', {
+        const response = await axios.post(`${API_BASE_URL}/payments/intent`, {
           service_id: serviceId,
           user_id: userId,
           pet_id: petId,
@@ -96,7 +98,7 @@ const CheckoutForm = ({
 
       // If payment succeeded, confirm with our backend
       if (paymentIntent.status === 'succeeded') {
-        const confirmResponse = await axios.post('/api/v1/payments/confirm', {
+        const confirmResponse = await axios.post(`${API_BASE_URL}/payments/confirm`, {
           payment_intent_id: paymentIntent.id,
           appointment_details: appointmentDetails
         });

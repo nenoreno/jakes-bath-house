@@ -536,7 +536,7 @@ func main() {
 
         // Service routes
         api.GET("/services", func(c *gin.Context) {
-            rows, err := db.Query("SELECT id, name, type, price, duration_minutes, description FROM services WHERE active = true ORDER BY type, price")
+            rows, err := db.Query("SELECT id, name, type, price, duration_minutes, description, active, requires_deposit, deposit_percentage FROM services ORDER BY type, price")
             if err != nil {
                 c.JSON(500, gin.H{"error": "Database error"})
                 return
@@ -546,7 +546,7 @@ func main() {
             var services []Service
             for rows.Next() {
                 var service Service
-                err := rows.Scan(&service.ID, &service.Name, &service.Type, &service.Price, &service.DurationMinutes, &service.Description)
+                err := rows.Scan(&service.ID, &service.Name, &service.Type, &service.Price, &service.DurationMinutes, &service.Description, &service.Active, &service.RequiresDeposit, &service.DepositPercentage)
                 if err != nil {
                     continue
                 }
