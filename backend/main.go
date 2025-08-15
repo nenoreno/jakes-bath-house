@@ -8,6 +8,7 @@ import (
     "net/http"  
     "os"
     "strconv"
+    "strings"
     "time"
 
     "github.com/gin-gonic/gin"
@@ -252,6 +253,39 @@ type UpdateRolePermissionsRequest struct {
     Permissions []string `json:"permissions" binding:"required"`
 }
 
+// Photo models
+type PetPhoto struct {
+    ID           int       `json:"id" db:"id"`
+    PetID        int       `json:"pet_id" db:"pet_id"`
+    AppointmentID *int     `json:"appointment_id" db:"appointment_id"`
+    UploadedBy   *int      `json:"uploaded_by" db:"uploaded_by"`
+    PhotoURL     string    `json:"photo_url" db:"photo_url"`
+    PhotoType    string    `json:"photo_type" db:"photo_type"`
+    Caption      string    `json:"caption" db:"caption"`
+    IsFeatured   bool      `json:"is_featured" db:"is_featured"`
+    IsPublic     bool      `json:"is_public" db:"is_public"`
+    FileSize     *int      `json:"file_size" db:"file_size"`
+    FileType     string    `json:"file_type" db:"file_type"`
+    UploadSource string    `json:"upload_source" db:"upload_source"`
+    Metadata     string    `json:"metadata" db:"metadata"`
+    CreatedAt    time.Time `json:"created_at" db:"created_at"`
+    UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+    
+    // Joined fields from view
+    PetName      string `json:"pet_name" db:"pet_name"`
+    PetBreed     string `json:"pet_breed" db:"pet_breed"`
+    OwnerName    string `json:"owner_name" db:"owner_name"`
+    ServiceName  *string `json:"service_name" db:"service_name"`
+    LikeCount    int    `json:"like_count" db:"like_count"`
+    CommentCount int    `json:"comment_count" db:"comment_count"`
+}
+
+type UploadPhotoRequest struct {
+    PetID    int    `form:"pet_id" binding:"required"`
+    Caption  string `form:"caption"`
+    PhotoType string `form:"photo_type"`
+}
+
 func main() {
     // Load environment variables
     if err := godotenv.Load(); err != nil {
@@ -310,6 +344,9 @@ func main() {
         
         c.Next()
     })
+
+    // Serve static files from uploads directory
+    r.Static("/uploads", "./uploads")
 
     // Health check
     r.GET("/health", func(c *gin.Context) {
@@ -681,6 +718,31 @@ func main() {
             
             log.Printf("Appointment %s status updated successfully to %s", appointmentID, req.Status)
             c.JSON(200, gin.H{"message": "Appointment status updated successfully"})
+        })
+
+        // Cleanup route for placeholder photos
+        api.DELETE("/photos/cleanup-placeholders", func(c *gin.Context) {
+            // Delete all photos with placeholder or unsplash URLs
+            result, err := db.Exec(`
+                DELETE FROM pet_photos 
+                WHERE photo_url LIKE '%unsplash%' 
+                   OR photo_url LIKE '%placeholder%'
+                   OR photo_url LIKE '%via.placeholder%'
+            `)
+            
+            if err != nil {
+                log.Printf("Failed to cleanup placeholder photos: %v", err)
+                c.JSON(500, gin.H{"error": "Failed to cleanup photos"})
+                return
+            }
+            
+            rowsAffected, _ := result.RowsAffected()
+            log.Printf("Cleaned up %d placeholder photos", rowsAffected)
+            
+            c.JSON(200, gin.H{
+                "message": "Placeholder photos cleaned up successfully",
+                "photos_removed": rowsAffected,
+            })
         })
 
         // Admin-specific routes
@@ -1479,6 +1541,315 @@ func main() {
                 })
             })
         }
+        
+        // Photo endpoints
+        api.GET("/users/:id/photos", func(c *gin.Context) {
+            userID := c.Param("id")
+            petID := c.Query("pet_id")
+            photoType := c.Query("photo_type")
+
+            query := `
+                SELECT pp.id, pp.pet_id, pp.photo_url, pp.photo_type, pp.caption, 
+                       pp.created_at, p.name as pet_name,
+                       COALESCE((SELECT COUNT(*) FROM photo_likes pl WHERE pl.photo_id = pp.id), 0) as like_count,
+                       COALESCE((SELECT COUNT(*) FROM photo_comments pc WHERE pc.photo_id = pp.id), 0) as comment_count
+                FROM pet_photos pp 
+                JOIN pets p ON pp.pet_id = p.id 
+                WHERE p.user_id = $1`
+
+            args := []interface{}{userID}
+            argCount := 1
+
+            if petID != "" && petID != "all" {
+                argCount++
+                query += fmt.Sprintf(" AND pp.pet_id = $%d", argCount)
+                args = append(args, petID)
+            }
+
+            if photoType != "" && photoType != "all" {
+                argCount++
+                query += fmt.Sprintf(" AND pp.photo_type = $%d", argCount)
+                args = append(args, photoType)
+            }
+
+            query += " ORDER BY pp.created_at DESC"
+
+            rows, err := db.Query(query, args...)
+            if err != nil {
+                c.JSON(500, gin.H{"error": "Failed to fetch photos"})
+                return
+            }
+            defer rows.Close()
+
+            var photos []PetPhoto
+            for rows.Next() {
+                var photo PetPhoto
+                err := rows.Scan(
+                    &photo.ID, &photo.PetID, &photo.PhotoURL, &photo.PhotoType, 
+                    &photo.Caption, &photo.CreatedAt, &photo.PetName,
+                    &photo.LikeCount, &photo.CommentCount,
+                )
+                if err != nil {
+                    log.Printf("Error scanning photo row: %v", err)
+                    continue
+                }
+                photos = append(photos, photo)
+            }
+
+            c.JSON(200, gin.H{"photos": photos})
+        })
+
+        api.POST("/pets/:id/photos", func(c *gin.Context) {
+            petIDStr := c.Param("id")
+            petID, err := strconv.Atoi(petIDStr)
+            if err != nil {
+                c.JSON(400, gin.H{"error": "Invalid pet ID"})
+                return
+            }
+
+            // Handle multipart form data
+            file, header, err := c.Request.FormFile("photo")
+            if err != nil {
+                log.Printf("Error getting form file: %v", err)
+                c.JSON(400, gin.H{"error": "No photo file provided"})
+                return
+            }
+            defer file.Close()
+
+            caption := c.PostForm("caption")
+            photoType := c.PostForm("photo_type")
+            appointmentIDStr := c.PostForm("appointment_id")
+            
+            if photoType == "" {
+                photoType = "customer_upload"
+            }
+
+            var appointmentID *int
+            if appointmentIDStr != "" {
+                if id, err := strconv.Atoi(appointmentIDStr); err == nil {
+                    appointmentID = &id
+                }
+            }
+
+            log.Printf("Upload request - PetID: %d, Filename: %s, Size: %d, Type: %s", 
+                petID, header.Filename, header.Size, header.Header.Get("Content-Type"))
+
+            // Create uploads directory if it doesn't exist
+            os.MkdirAll("uploads", 0755)
+
+            // Generate unique filename
+            filename := fmt.Sprintf("pet_%d_%d_%s", petID, time.Now().Unix(), header.Filename)
+            filepath := fmt.Sprintf("uploads/%s", filename)
+
+            log.Printf("Saving file to: %s", filepath)
+
+            // Save the uploaded file
+            err = c.SaveUploadedFile(header, filepath)
+            if err != nil {
+                log.Printf("Error saving file: %v", err)
+                c.JSON(500, gin.H{"error": "Failed to save file"})
+                return
+            }
+
+            log.Printf("File saved successfully: %s", filepath)
+
+            // Create URL for the uploaded file (relative to server)
+            photoURL := fmt.Sprintf("http://localhost:8081/uploads/%s", filename)
+
+            // Save to database
+            _, err = db.Exec(`
+                INSERT INTO pet_photos (pet_id, appointment_id, photo_url, photo_type, caption, upload_source, file_size, file_type, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, 'app', $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `, petID, appointmentID, photoURL, photoType, caption, header.Size, header.Header.Get("Content-Type"))
+
+            if err != nil {
+                log.Printf("Failed to save photo to database: %v", err)
+                c.JSON(500, gin.H{"error": "Failed to save photo"})
+                return
+            }
+
+            c.JSON(201, gin.H{
+                "message": "Photo uploaded successfully",
+                "photo_url": photoURL,
+            })
+        })
+
+        // Delete photo endpoint
+        api.DELETE("/photos/:id", func(c *gin.Context) {
+            photoID := c.Param("id")
+            userID := 1 // In production, get from auth token (owner or staff)
+
+            // Get photo details first to check ownership and get file path
+            var photo PetPhoto
+            var petUserID int
+            err := db.QueryRow(`
+                SELECT pp.id, pp.pet_id, pp.photo_url, pp.photo_type, p.user_id
+                FROM pet_photos pp
+                JOIN pets p ON pp.pet_id = p.id
+                WHERE pp.id = $1
+            `, photoID).Scan(&photo.ID, &photo.PetID, &photo.PhotoURL, &photo.PhotoType, &petUserID)
+
+            if err != nil {
+                c.JSON(404, gin.H{"error": "Photo not found"})
+                return
+            }
+
+            // Check if user owns this pet (in production, also check staff permissions)
+            if petUserID != userID {
+                c.JSON(403, gin.H{"error": "You can only delete your own photos"})
+                return
+            }
+
+            // Delete from database first
+            _, err = db.Exec("DELETE FROM pet_photos WHERE id = $1", photoID)
+            if err != nil {
+                log.Printf("Failed to delete photo from database: %v", err)
+                c.JSON(500, gin.H{"error": "Failed to delete photo"})
+                return
+            }
+
+            // Delete physical file if it's a local upload (not Unsplash URL)
+            if strings.Contains(photo.PhotoURL, "localhost:8081/uploads/") {
+                // Extract filename from URL
+                parts := strings.Split(photo.PhotoURL, "/")
+                if len(parts) > 0 {
+                    filename := parts[len(parts)-1]
+                    filepath := fmt.Sprintf("uploads/%s", filename)
+                    
+                    err = os.Remove(filepath)
+                    if err != nil {
+                        log.Printf("Warning: Failed to delete physical file %s: %v", filepath, err)
+                        // Don't fail the request if file deletion fails
+                    } else {
+                        log.Printf("Successfully deleted file: %s", filepath)
+                    }
+                }
+            }
+
+            c.JSON(200, gin.H{"message": "Photo deleted successfully"})
+        })
+
+        api.POST("/photos/:id/like", func(c *gin.Context) {
+            photoID := c.Param("id")
+            userID := 1 // In production, get from auth token
+
+            // Check if user already liked this photo
+            var existingLike int
+            err := db.QueryRow("SELECT id FROM photo_likes WHERE photo_id = $1 AND user_id = $2", photoID, userID).Scan(&existingLike)
+            
+            var action string
+            if err == sql.ErrNoRows {
+                // User hasn't liked yet, add like
+                _, err = db.Exec(`
+                    INSERT INTO photo_likes (photo_id, user_id, created_at)
+                    VALUES ($1, $2, CURRENT_TIMESTAMP)
+                `, photoID, userID)
+                action = "liked"
+            } else if err == nil {
+                // User already liked, remove like
+                _, err = db.Exec("DELETE FROM photo_likes WHERE photo_id = $1 AND user_id = $2", photoID, userID)
+                action = "unliked"
+            }
+
+            if err != nil {
+                log.Printf("Failed to toggle like: %v", err)
+                c.JSON(500, gin.H{"error": "Failed to toggle like"})
+                return
+            }
+
+            // Get updated like count
+            var likeCount int
+            db.QueryRow("SELECT COUNT(*) FROM photo_likes WHERE photo_id = $1", photoID).Scan(&likeCount)
+
+            c.JSON(200, gin.H{
+                "message": "Like toggled successfully",
+                "action": action,
+                "like_count": likeCount,
+            })
+        })
+
+        // Add comment endpoint
+        api.POST("/photos/:id/comments", func(c *gin.Context) {
+            photoID := c.Param("id")
+            userID := 1 // In production, get from auth token
+
+            var req struct {
+                CommentText string `json:"comment_text" binding:"required"`
+            }
+            if err := c.ShouldBindJSON(&req); err != nil {
+                c.JSON(400, gin.H{"error": err.Error()})
+                return
+            }
+
+            // Insert comment
+            var commentID int
+            err := db.QueryRow(`
+                INSERT INTO photo_comments (photo_id, user_id, comment_text, created_at, updated_at)
+                VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING id
+            `, photoID, userID, req.CommentText).Scan(&commentID)
+
+            if err != nil {
+                log.Printf("Failed to add comment: %v", err)
+                c.JSON(500, gin.H{"error": "Failed to add comment"})
+                return
+            }
+
+            c.JSON(201, gin.H{
+                "message": "Comment added successfully",
+                "comment_id": commentID,
+            })
+        })
+
+        // Get comments for a photo
+        api.GET("/photos/:id/comments", func(c *gin.Context) {
+            photoID := c.Param("id")
+
+            rows, err := db.Query(`
+                SELECT pc.id, pc.comment_text, pc.is_staff_comment, pc.created_at, 
+                       u.name as commenter_name, u.role as commenter_role
+                FROM photo_comments pc
+                JOIN users u ON pc.user_id = u.id
+                WHERE pc.photo_id = $1
+                ORDER BY pc.created_at ASC
+            `, photoID)
+            if err != nil {
+                c.JSON(500, gin.H{"error": "Failed to fetch comments"})
+                return
+            }
+            defer rows.Close()
+
+            var comments []map[string]interface{}
+            for rows.Next() {
+                var comment struct {
+                    ID           int       `json:"id"`
+                    CommentText  string    `json:"comment_text"`
+                    IsStaff      bool      `json:"is_staff_comment"`
+                    CreatedAt    time.Time `json:"created_at"`
+                    CommenterName string   `json:"commenter_name"`
+                    CommenterRole string   `json:"commenter_role"`
+                }
+                
+                err := rows.Scan(&comment.ID, &comment.CommentText, &comment.IsStaff, 
+                    &comment.CreatedAt, &comment.CommenterName, &comment.CommenterRole)
+                if err != nil {
+                    continue
+                }
+
+                commentData := map[string]interface{}{
+                    "id": comment.ID,
+                    "comment_text": comment.CommentText,
+                    "is_staff_comment": comment.IsStaff,
+                    "created_at": comment.CreatedAt,
+                    "commenter_name": comment.CommenterName,
+                    "commenter_role": comment.CommenterRole,
+                    "relative_time": getRelativeTime(comment.CreatedAt),
+                }
+                comments = append(comments, commentData)
+            }
+
+            c.JSON(200, gin.H{"comments": comments})
+        })
     }
 
     port := os.Getenv("PORT")
@@ -1596,4 +1967,34 @@ func broadcastAppointmentUpdate(appointment Appointment, action string) {
     }
 
     hub.broadcast <- messageBytes
+}
+
+// Helper function to get relative time (e.g., "2 hours ago")
+func getRelativeTime(t time.Time) string {
+    now := time.Now()
+    diff := now.Sub(t)
+
+    if diff < time.Minute {
+        return "just now"
+    } else if diff < time.Hour {
+        minutes := int(diff.Minutes())
+        if minutes == 1 {
+            return "1 minute ago"
+        }
+        return fmt.Sprintf("%d minutes ago", minutes)
+    } else if diff < 24*time.Hour {
+        hours := int(diff.Hours())
+        if hours == 1 {
+            return "1 hour ago"
+        }
+        return fmt.Sprintf("%d hours ago", hours)
+    } else if diff < 7*24*time.Hour {
+        days := int(diff.Hours() / 24)
+        if days == 1 {
+            return "1 day ago"
+        }
+        return fmt.Sprintf("%d days ago", days)
+    } else {
+        return t.Format("Jan 2, 2006")
+    }
 }

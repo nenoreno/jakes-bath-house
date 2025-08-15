@@ -1234,7 +1234,12 @@ const AdminPanel = () => {
           <PermissionGate permission="system_settings">
             <div className="space-y-6">
               <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold text-gray-900">Business Settings</h2>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Business Settings</h2>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Configure key business settings. Additional options will appear as new features are added.
+                  </p>
+                </div>
                 <button 
                   onClick={fetchBusinessSettings}
                   className="bg-indigo-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-indigo-700"
@@ -1251,7 +1256,14 @@ const AdminPanel = () => {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {settingsCategories.map(category => {
+                  {settingsCategories
+                    .filter(category => category !== 'business_hours') // Hide business hours
+                    .sort((a, b) => {
+                      // Sort categories by priority: business, payment, security, notifications
+                      const order = ['business', 'payment', 'security', 'notifications'];
+                      return order.indexOf(a) - order.indexOf(b);
+                    })
+                    .map(category => {
                     const categorySettings = businessSettings.filter(setting => setting.category === category);
                     return (
                       <div key={category} className="bg-white rounded-lg shadow-sm border">
@@ -1262,7 +1274,7 @@ const AdminPanel = () => {
                         </div>
                         <div className="p-6">
                           <div className="space-y-4">
-                            {categorySettings.map(setting => (
+                            {categorySettings.length > 0 ? categorySettings.map(setting => (
                               <div key={setting.id} className="flex items-center justify-between py-2">
                                 <div className="flex-1">
                                   <label className="text-sm font-medium text-gray-700 capitalize">
@@ -1315,7 +1327,13 @@ const AdminPanel = () => {
                                   )}
                                 </div>
                               </div>
-                            ))}
+                            )) : (
+                              <div className="text-center py-4">
+                                <p className="text-sm text-gray-500">
+                                  No settings available in this category. Settings will appear here as features are added.
+                                </p>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

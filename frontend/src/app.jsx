@@ -1,9 +1,12 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate } from 'react-router-dom';
 import axios from 'axios';
-import { Home, Calendar, Clock, User, Scissors, Droplets, Star, Bell, Phone, MapPin, Plus, Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { Home, Calendar, Clock, User, Scissors, Droplets, Star, Bell, Phone, MapPin, Plus, Eye, EyeOff, ArrowLeft, Camera, Bot } from 'lucide-react';
 import AdminPanel from './components/admin/AdminPanel';
 import PaymentStep from './components/payment/PaymentStep';
+import PetGallery from './components/PetGallery';
+import StaffDashboard from './components/staff/StaffDashboard';
+import PetCareAI from './components/ai/PetCareAI';
 
 // API Configuration
 const API_BASE_URL = 'http://localhost:8081/api/v1';
@@ -31,9 +34,11 @@ const AuthProvider = ({ children }) => {
       const response = await axios.post(`${API_BASE_URL}/login`, { email, password });
       const userData = response.data.user;
       
-      // Set role based on email for admin access
+      // Set role based on email for admin/staff access
       if (email === 'ant@test.com') {
         userData.role = 'super_admin';
+      } else if (email === 'ant@cheese.com') {
+        userData.role = 'staff'; // Demo staff account
       } else {
         userData.role = 'customer';
       }
@@ -401,9 +406,29 @@ const MobileApp = () => {
   const [isConnected, setIsConnected] = useState(false);
   const { user, logout } = useAuth();
 
-  const [notifications] = useState([
-    { id: 1, message: "Your grooming appointment is ready for pickup!", time: "10 min ago" }
-  ]);
+  // Dynamic content instead of placeholder notifications
+  const getRewardsStatus = () => {
+    const visitsToReward = 5 - ((user.wash_count || 0) % 5);
+    if (visitsToReward === 1) {
+      return { message: "🎉 One more visit and you get a FREE wash!", type: "reward", icon: "🎁" };
+    } else if (visitsToReward <= 2) {
+      return { message: `Only ${visitsToReward} more visits until your FREE reward!`, type: "progress", icon: "⭐" };
+    }
+    return null;
+  };
+
+  const getSeasonalPromo = () => {
+    const month = new Date().getMonth();
+    if (month >= 5 && month <= 7) { // Summer
+      return { message: "☀️ Summer Special: Book 2 grooming sessions and save 15%!", type: "promo", icon: "🌞" };
+    } else if (month >= 9 && month <= 11) { // Fall
+      return { message: "🍂 Fall Prep: Get your pets ready for cooler weather!", type: "seasonal", icon: "🍁" };
+    } else if (month >= 0 && month <= 2) { // Winter
+      return { message: "❄️ Winter Care: Extra conditioning treatments available!", type: "seasonal", icon: "❄️" };
+    } else { // Spring
+      return { message: "🌸 Spring Cleaning: Shedding season specials now available!", type: "seasonal", icon: "🌷" };
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -426,85 +451,114 @@ const MobileApp = () => {
   const HomeScreen = () => (
     <div className="pb-20">
       {/* Header */}
-      <div className="bg-gradient-to-r from-orange-500 to-amber-500 p-6 rounded-b-3xl text-white mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h1 className="text-2xl font-bold">Hey {user.name.split(' ')[0]}! 👋</h1>
-            <p className="text-orange-100">Ready to pamper your pets?</p>
-          </div>
-          <div className="relative">
-            <Bell className="w-6 h-6" />
-            {notifications.length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-xs w-5 h-5 rounded-full flex items-center justify-center">
-                {notifications.length}
-              </span>
-            )}
-          </div>
-        </div>
+      <div className="bg-gradient-to-br from-blue-600 via-purple-600 to-teal-500 p-6 rounded-b-3xl text-white mb-6 relative overflow-hidden">
+        {/* Background decoration */}
+        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16"></div>
+        <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full translate-y-12 -translate-x-12"></div>
         
-        {/* Quick Stats */}
-        <div className="bg-white bg-opacity-20 rounded-2xl p-4">
-          <div className="flex justify-between items-center">
-            <div className="text-center">
-              <p className="text-2xl font-bold">{user.wash_count || 0}</p>
-              <p className="text-orange-100 text-sm">Visits</p>
+        <div className="relative z-10">
+          <div className="flex justify-between items-start mb-6">
+            <div className="flex-1">
+              {/* Logo and Business Name */}
+              <div className="flex items-center mb-3">
+                <div className="bg-white/20 backdrop-blur-sm rounded-xl p-2 mr-3">
+                  <Droplets className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold">Jake's Bath House</h1>
+                  <p className="text-blue-100 text-xs">Royal Palm Beach, FL</p>
+                </div>
+              </div>
+              
+              {/* Welcome Message */}
+              <div>
+                <h2 className="text-lg font-semibold">Hey {user.name.split(' ')[0]}! 👋</h2>
+                <p className="text-blue-100">Ready to pamper your furry friends?</p>
+              </div>
             </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold">{5 - ((user.wash_count || 0) % 5)}</p>
-              <p className="text-orange-100 text-sm">More for reward</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold">${(user.wash_count || 0) * 15}</p>
-              <p className="text-orange-100 text-sm">Total Spent</p>
+            
+            <button className="bg-white/20 backdrop-blur-sm rounded-full p-2 hover:bg-white/30 transition-colors">
+              <Bell className="w-5 h-5" />
+            </button>
+          </div>
+          
+          {/* Quick Stats */}
+          <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-4 border border-white/20">
+            <div className="flex justify-between items-center">
+              <div className="text-center">
+                <p className="text-2xl font-bold">{user.wash_count || 0}</p>
+                <p className="text-blue-100 text-sm">Total Visits</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold">{5 - ((user.wash_count || 0) % 5)}</p>
+                <p className="text-blue-100 text-sm">Until Reward</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold">${(user.wash_count || 0) * 15}</p>
+                <p className="text-blue-100 text-sm">Total Saved</p>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="px-4 mb-6">
-        <h3 className="text-lg font-semibold mb-3 text-gray-800">Quick Book</h3>
-        <div className="grid grid-cols-2 gap-3">
-          <button 
-            onClick={() => setCurrentView('book')}
-            className="bg-gradient-to-br from-teal-500 to-cyan-500 p-4 rounded-2xl text-white flex items-center"
-          >
-            <Droplets className="w-8 h-8 mr-3" />
-            <div className="text-left">
-              <p className="font-semibold">DIY Wash</p>
-              <p className="text-teal-100 text-sm">$15 • 1 hour</p>
-            </div>
-          </button>
-          <button 
-            onClick={() => setCurrentView('book')}
-            className="bg-gradient-to-br from-amber-500 to-orange-500 p-4 rounded-2xl text-white flex items-center"
-          >
-            <Scissors className="w-8 h-8 mr-3" />
-            <div className="text-left">
-              <p className="font-semibold">Grooming</p>
-              <p className="text-orange-100 text-sm">From $45</p>
-            </div>
-          </button>
-        </div>
-      </div>
 
-      {/* Notifications */}
-      {notifications.length > 0 && (
-        <div className="px-4 mb-6">
-          <h3 className="text-lg font-semibold mb-3 text-gray-800">Notifications</h3>
-          {notifications.map(notif => (
-            <div key={notif.id} className="bg-green-50 border border-green-200 rounded-xl p-4 mb-2">
-              <div className="flex items-start">
-                <div className="bg-green-500 w-2 h-2 rounded-full mt-2 mr-3 flex-shrink-0"></div>
+      {/* Dynamic Content Cards */}
+      <div className="px-4 mb-6 space-y-3">
+        {/* Rewards Status */}
+        {(() => {
+          const rewardStatus = getRewardsStatus();
+          return rewardStatus && (
+            <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-4">
+              <div className="flex items-center">
+                <div className="bg-purple-100 rounded-full p-2 mr-3">
+                  <span className="text-lg">{rewardStatus.icon}</span>
+                </div>
                 <div className="flex-1">
-                  <p className="text-green-800 font-medium">{notif.message}</p>
-                  <p className="text-green-600 text-sm mt-1">{notif.time}</p>
+                  <p className="text-purple-800 font-medium">{rewardStatus.message}</p>
+                  <p className="text-purple-600 text-sm">Loyalty Program</p>
                 </div>
               </div>
             </div>
-          ))}
+          );
+        })()}
+
+        {/* Seasonal Promotion */}
+        {(() => {
+          const seasonalPromo = getSeasonalPromo();
+          return (
+            <div className="bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-200 rounded-xl p-4">
+              <div className="flex items-center">
+                <div className="bg-orange-100 rounded-full p-2 mr-3">
+                  <span className="text-lg">{seasonalPromo.icon}</span>
+                </div>
+                <div className="flex-1">
+                  <p className="text-orange-800 font-medium">{seasonalPromo.message}</p>
+                  <p className="text-orange-600 text-sm">Limited Time Offer</p>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Business Hours Info */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
+          <div className="flex items-center">
+            <div className="bg-blue-100 rounded-full p-2 mr-3">
+              <Clock className="w-5 h-5 text-blue-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-blue-800 font-medium">Open Today: 9:00 AM - 6:00 PM</p>
+              <p className="text-blue-600 text-sm">Self-Service Available Until 7:00 PM</p>
+            </div>
+          </div>
         </div>
-      )}
+      </div>
+
+      {/* Pet Photo Gallery */}
+      <div className="px-4 mb-6">
+        <PetGallery userId={user.id} showUpload={false} />
+      </div>
     </div>
   );
 
@@ -1398,18 +1452,20 @@ const MobileApp = () => {
   };
 
   // Profile Screen (keeping your original)
-  const ProfileScreen = () => (
-    <div className="pb-20">
-      <div className="p-4">
-        <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-6 text-white mb-6">
-          <div className="flex items-center">
-            <div className="bg-white bg-opacity-30 w-16 h-16 rounded-full flex items-center justify-center mr-4">
+  const ProfileScreen = () => {
+    const [activeTab, setActiveTab] = useState('info');
+
+    return (
+      <div className="pb-20">
+        {/* Header */}
+        <div className="bg-gradient-to-br from-blue-600 via-purple-600 to-teal-500 p-6 text-white mb-6">
+          <div className="flex items-center mb-4">
+            <div className="bg-white/20 backdrop-blur-sm w-16 h-16 rounded-full flex items-center justify-center mr-4">
               <User className="w-8 h-8" />
             </div>
             <div className="flex-1">
               <h2 className="text-xl font-bold">{user.name}</h2>
-              <p className="text-orange-100">{user.phone}</p>
-              <p className="text-orange-100 text-sm">{user.email}</p>
+              <p className="text-blue-100">{user.email}</p>
               <div className="flex items-center mt-1">
                 <Star className="w-4 h-4 mr-1" />
                 <span className="text-sm">Loyal Customer</span>
@@ -1418,52 +1474,101 @@ const MobileApp = () => {
           </div>
         </div>
 
-        <div className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl p-6 text-white mb-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold">Rewards Progress</h3>
-            <Star className="w-6 h-6" />
-          </div>
-          <div className="mb-3">
-            <div className="text-3xl font-bold">{user.wash_count || 0} visits</div>
-            <p className="text-purple-100">{5 - ((user.wash_count || 0) % 5)} more visits until free wash!</p>
-          </div>
-          <div className="bg-white bg-opacity-30 rounded-full h-2">
-            <div 
-              className="bg-white h-2 rounded-full transition-all duration-300" 
-              style={{ width: `${((user.wash_count || 0) % 5) * 20}%` }}
-            ></div>
+        {/* Tab Navigation */}
+        <div className="px-4 mb-6">
+          <div className="flex bg-gray-100 rounded-xl p-1">
+            {[
+              { id: 'info', label: 'Profile', icon: User },
+              { id: 'pets', label: 'My Pets', icon: User },
+              { id: 'photos', label: 'Photos', icon: Camera }
+            ].map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                className={`flex-1 flex items-center justify-center py-2 px-3 rounded-lg transition-colors ${
+                  activeTab === id
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                <Icon className="w-4 h-4 mr-2" />
+                <span className="text-sm font-medium">{label}</span>
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="space-y-3">
-          <button 
-            onClick={logout}
-            className="w-full bg-red-50 hover:bg-red-100 rounded-xl p-4 flex items-center justify-between transition-colors"
-          >
-            <span className="font-medium text-red-600">Sign Out</span>
-            <span className="text-red-400">›</span>
-          </button>
-        </div>
+        {/* Tab Content */}
+        <div className="px-4">
+          {activeTab === 'info' && (
+            <div className="space-y-6">
+              {/* Rewards Progress */}
+              <div className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl p-6 text-white">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold">Rewards Progress</h3>
+                  <Star className="w-6 h-6" />
+                </div>
+                <div className="mb-3">
+                  <div className="text-3xl font-bold">{user.wash_count || 0} visits</div>
+                  <p className="text-purple-100">{5 - ((user.wash_count || 0) % 5)} more visits until free wash!</p>
+                </div>
+                <div className="bg-white bg-opacity-30 rounded-full h-2">
+                  <div 
+                    className="bg-white h-2 rounded-full transition-all duration-300" 
+                    style={{ width: `${((user.wash_count || 0) % 5) * 20}%` }}
+                  ></div>
+                </div>
+              </div>
 
-        <div className="mt-6 bg-white rounded-xl p-4 shadow-sm">
-          <div className="flex items-center mb-3">
-            <MapPin className="w-5 h-5 text-orange-600 mr-2" />
-            <span className="font-semibold">Jake's Bath House</span>
-          </div>
-          <p className="text-gray-600 text-sm mb-2">606 Royal Palm Beach Blvd</p>
-          <p className="text-gray-600 text-sm mb-2">Royal Palm Beach, FL 33411</p>
-          <p className="text-orange-600 font-medium">(561) 812-3931</p>
+              {/* Contact Info */}
+              <div className="bg-white rounded-xl p-4 shadow-sm">
+                <h3 className="font-semibold text-gray-900 mb-3">Contact Information</h3>
+                <div className="space-y-2">
+                  <p className="text-gray-600"><span className="font-medium">Email:</span> {user.email}</p>
+                  <p className="text-gray-600"><span className="font-medium">Phone:</span> {user.phone || 'Not provided'}</p>
+                </div>
+              </div>
+
+              {/* Business Info */}
+              <div className="bg-white rounded-xl p-4 shadow-sm">
+                <div className="flex items-center mb-3">
+                  <MapPin className="w-5 h-5 text-blue-600 mr-2" />
+                  <span className="font-semibold">Jake's Bath House</span>
+                </div>
+                <p className="text-gray-600 text-sm mb-2">606 Royal Palm Beach Blvd</p>
+                <p className="text-gray-600 text-sm mb-2">Royal Palm Beach, FL 33411</p>
+                <p className="text-blue-600 font-medium">(561) 812-3931</p>
+              </div>
+
+              {/* Sign Out */}
+              <button 
+                onClick={logout}
+                className="w-full bg-red-50 hover:bg-red-100 rounded-xl p-4 flex items-center justify-between transition-colors"
+              >
+                <span className="font-medium text-red-600">Sign Out</span>
+                <span className="text-red-400">›</span>
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'pets' && <PetManagementScreen />}
+          
+          {activeTab === 'photos' && (
+            <div>
+              <PetGallery userId={user.id} showUpload={true} />
+            </div>
+          )}
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderScreen = () => {
     switch(currentView) {
       case 'home': return <HomeScreen />;
       case 'book': return <BookScreen />;
+      case 'ai': return <PetCareAI onBack={() => setCurrentView('home')} />;
       case 'appointments': return <AppointmentsScreen />;
-      case 'pets': return <PetManagementScreen />;
       case 'profile': return <ProfileScreen />;
       default: return <HomeScreen />;
     }
@@ -1480,8 +1585,8 @@ const MobileApp = () => {
           {[
             { key: 'home', icon: Home, label: 'Home' },
             { key: 'book', icon: Plus, label: 'Book' },
+            { key: 'ai', icon: Bot, label: 'Ask Jake' },
             { key: 'appointments', icon: Clock, label: 'Visits' },
-            { key: 'pets', icon: User, label: 'Pets' },
             { key: 'profile', icon: User, label: 'Profile' },
           ].map(({ key, icon: Icon, label }) => (
             <button
@@ -1543,6 +1648,16 @@ function App() {
         element={
           user && user.role === 'super_admin' ? 
             <AdminPanel /> : 
+            user ? <Navigate to="/app" replace /> : <Navigate to="/login" replace />
+        } 
+      />
+      
+      {/* Staff Dashboard - For staff and super_admin */}
+      <Route 
+        path="/staff" 
+        element={
+          user && (user.role === 'staff' || user.role === 'super_admin') ? 
+            <StaffDashboard /> : 
             user ? <Navigate to="/app" replace /> : <Navigate to="/login" replace />
         } 
       />
